@@ -8,7 +8,9 @@ from typing import Literal
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from .lab import router as lab_router
 from openai import AsyncOpenAI, APIConnectionError, APIStatusError, APITimeoutError, AuthenticationError, RateLimitError
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -51,12 +53,19 @@ async def lifespan(app: FastAPI):
         await app.state.openai.close()
 
 
-app = FastAPI(title='LLM corpus-style demo', lifespan=lifespan)
+app = FastAPI(title='Next-token lab', lifespan=lifespan)
+app.include_router(lab_router)
+app.mount('/assets', StaticFiles(directory=Path(__file__).resolve().parent.parent / 'frontend' / 'assets'), name='assets')
 
 
 @app.get('/', include_in_schema=False)
 async def frontend():
     return FileResponse(Path(__file__).resolve().parent.parent / 'frontend' / 'index.html')
+
+
+@app.get('/explore', include_in_schema=False)
+async def explore():
+    return RedirectResponse('/#styles', status_code=307)
 
 
 app.add_middleware(

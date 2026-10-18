@@ -102,3 +102,52 @@ def test_chat_preserves_shared_history_and_all_positions(client):
     [{'role': 'user', 'content': 'Hello'}, {'role': 'user', 'content': 'Again'}]])
 def test_chat_invalid_history(client, messages):
     assert client.post('/chat', json={'messages': messages, 'corpus': 'news'}).status_code == 422
+
+
+@pytest.mark.parametrize('text', ['Hello, world!', 'Привіт, світе! 👋', 'a  b\n\t', '<|endoftext|>', ''])
+def test_tokenizer_bytes_reconstruct_original_text_without_key(client, text):
+    result = client.post('/tokenize', json={'text': text})
+    assert result.status_code == 200
+    data = result.json()
+    reconstructed = bytes(b for token in data['tokens'] for b in token['bytes']).decode('utf-8')
+    assert reconstructed == text
+    assert data['token_count'] == len(data['tokens'])
+    assert all(isinstance(token['id'], int) for token in data['tokens'])
+
+
+@pytest.mark.parametrize('mode,expected_temperature', [('sample', 0.8), ('greedy', 0)])
+def test_lab_saves_actual_trace_and_exact_conditioning(client, mode, expected_temperature):
+    create = fake_api()
+    choice = create.return_value.choices[0]
+    choice.message.content = ' quiet quiet'
+    choice.finish_reason = 'length'
+    choice.logprobs.content *= 2
+    request = {'prompt': 'The night was ', 'context': 'Beside the sea.', 'style': 'neutral',
+               'mode': mode, 'temperature': 0.8, 'length': 40}
+    response = client.post('/lab/run', json=request)
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data['positions']) == 2
+    assert data['request'] == request
+    assert data['messages'] == create.call_args.kwargs['messages']
+    assert data['messages'][-1]['content'] == 'The night was '
+    assert 'Beside the sea.' in data['messages'][0]['content']
+    assert data['temperature'] == expected_temperature
+    assert create.call_args.kwargs['temperature'] == expected_temperature
+    assert data['positions'][0]['other_probability'] == pytest.approx(0.4)
+    assert data['positions'][0]['probability'] == pytest.approx(0.4)
+
+
+@pytest.mark.parametrize('changes', [{'prompt': ' '}, {'context': 'a'*2001}, {'length': 65},
+                                    {'mode': 'invalid'}, {'style': 'fake-trained-model'}])
+def test_lab_validation(client, changes):
+    assert client.post('/lab/run', json={'prompt': 'Hello', **changes}).status_code == 422
+
+
+def test_guided_assets_and_explore_are_served(client):
+    assert 'How LLMs work?' in client.get('/').text
+    assert client.get('/explore', follow_redirects=False).headers['location'] == '/#styles'
+    assert 'Talk to the model in different styles.' in client.get('/').text
+    assert client.get('/assets/transformer.js').status_code == 200
+    assert client.get('/assets/lab.js').status_code == 200
+    assert client.get('/assets/lab.css').status_code == 200

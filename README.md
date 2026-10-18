@@ -1,113 +1,166 @@
-# Open edX next-token demo — backend
+# Next Token — interactive language-model lab
 
-One underlying LLM, four system prompts: novels, lyrics, news, academic.
-This activity measures how instructions affect the first assistant-output token's
-probability distribution. It does **not** train four models or measure the
-causal effect of changing pretraining data. A chat continuation is conditioned
-on message boundaries and instructions as well as the learner's text.
+A guided Open edX activity about tokenization, next-token probability,
+context, and repeated generation. The frontend and backend run together.
 
-## Run locally
+## Run
 
-From this project folder (Python 3.10 or newer):
+Requires Python 3.10+.
 
 ```sh
+cd /Users/mariia/llm-edx-demo
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r backend/requirements.txt
-```
-
-Set `OPENAI_API_KEY` in `backend/.env` using your editor, then run:
-
-```sh
 uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-The key stays on the backend; `.env` is ignored by Git. A blank `.env` has been
-created for you. Restart after changing it. `OPENAI_MODEL` defaults to
-`gpt-4.1-mini`; a replacement must support Chat Completions, logprobs,
-temperature, and a one-token output limit.
+Open http://localhost:8000. Stop with **Ctrl+C**.
 
-Interactive API docs: http://localhost:8000/docs
+Set `OPENAI_API_KEY` in `backend/.env` for live generation, comparison, and
+chat. A starter file is provided; `backend/.env.example` documents its fields.
+Restart after changing environment settings. Keys never go to the browser.
+`OPENAI_MODEL` defaults to `gpt-4.1-mini` and must support Chat Completions,
+logprobs, temperature, and a tokenizer known to tiktoken.
 
-Frontend: http://localhost:8000 — enter text, select one style or compare all four,
-adjust temperature, and append a sampled token. The frontend uses the same
-server, so no separate frontend process is needed.
-
-## Curl test
+Tokenization needs no API key. On first use, tiktoken downloads the public
+vocabulary to `.cache/tiktoken/`; later tokenization works offline. To warm
+the cache before a class or an offline test run:
 
 ```sh
-curl --fail-with-body http://localhost:8000/health
-curl --fail-with-body http://localhost:8000/next-token \
-  -H 'Content-Type: application/json' \
-  -d '{"prompt":"The night was","corpus":"novels","temperature":1,"top_logprobs":10}'
+python -c 'from backend.lab import encoding; from backend.main import MODEL; print(encoding(MODEL).name)'
 ```
 
-Repeat with `lyrics`, `news`, and `academic`, keeping all other inputs identical.
-Each request is a paid API call. No mocked probabilities are used by the endpoint.
+## Single-page learning sequence
 
-The response includes `generated_token`, its logprob/probability/UTF-8 bytes,
-`tokens` (each with token, bytes, logprob, probability), `other_probability`,
-corpus, resolved model, and requested temperature. Probabilities are
-`exp(logprob)` with no renormalization. “Other” is the remaining mass outside
-the returned alternatives, subject to API rounding. Missing alternatives are
-unknown, not zero probability. Preserve leading whitespace when displaying or
-appending tokens. Tokens may be word fragments or partial UTF-8 characters;
-combine returned bytes before decoding a sequence of tokens.
+The lab is a continuous worksheet. All sections are present on one page;
+the links at the top scroll to sections rather than switch screens.
 
-The API reports logprobs for assistant output, not raw base-model logits. Keep
-temperature at 1 for the initial comparison. Do not reconstruct an exact full
-vocabulary temperature distribution from only the top 10 or 20 alternatives.
+The opening defines LLMs, transformers, training, and generation without assuming a mathematics background. Main activities use plain language; matrices, Q/K/V, token bytes, and full calculations are optional.
 
-## Error handling and local browser access
+1. **Tokens:** whole words, fragments, punctuation, and visible spaces. The
+   Unbelievable! preset explicitly names the text it loads.
+2. **Vectors:** lists of four numbers, position information, and a block overview.
+   Attention, feed-forward processing (MLP), and residual additions are explained
+   before the diagram.
+3. **Model settings:** move one setting and compare the original result with
+   the current result. Matrix arithmetic is available in optional details.
+4. **Attention:** context connections and an interactive causal attention heatmap.
+   Hover or focus a cell for the exact share; click to inspect its row.
+5. **Prediction and repetition:** eight next-token chances; sample, choose,
+   append, and undo. Scores and parameter-change deltas remain optional.
+   A temperature explorer compares fixed scores at 0.3, 1.0, and 2.0 and counts
+   repeated independent draws. A context-window activity removes earlier tokens
+   and compares actual teaching-model predictions before and after truncation.
+6. **A trained model:** the existing API-backed generation trace and replay.
+7. **Context A/B:** controlled API comparison with matching token rows.
+8. **Writing styles:** compare instructions using a shared prefix.
+9. **Chat:** compare full replies and inspect token probabilities under a shared history.
+10. **Reflection:** distinguish changing a weight from changing context.
 
-Invalid input returns 422, missing backend credentials 503, upstream
-connection/auth/model failures 502, upstream quota/rate limits 429, and
-upstream timeouts 504. Provider error details and secrets are not returned.
+**Two sources of numbers are kept separate.** Tokenization is real tiktoken
+output. Sections 2–5 use a **constructed, untrained teaching transformer**,
+not GPT's activations or attention. Its token lookup is reproducibly generated
+from token IDs; its positional signal is sinusoidal; all matrices are fixed,
+hand-chosen values. It has width 4, one causal attention head, one pre-normalized
+decoder block, a 4→8→4 GELU MLP, residual connections, final normalization, and
+tied output vectors over eight actual token IDs. Every displayed operation and
+probability is computed, not mocked. Its language quality is not meaningful.
+It supports up to 32 tokens and preserves generated token IDs rather than
+retokenizing them when appending. Tokenization itself can handle longer inputs.
 
-Local frontend origins on ports 5500 and 8001 are allowed by default. Serve a
-future frontend over HTTP rather than opening a `file://` page. Set
-`CORS_ORIGINS` to comma-separated exact origins for Open edX integration.
-This is a local prototype: before public deployment, add server-side learner
-access control and usage limits. CORS alone does not authorize API callers.
+The API sections use actual model output logprobs. The API does not expose
+internal vectors, attention weights, or pretrained model parameters. The
+teaching displays must never be described as measurements from that API model.
 
-## Automated checks (no API key or billed calls)
+The full trained-model experience in Georgia Tech's Transformer Explainer is
+linked as further exploration, including its approximate 600 MB download notice.
+No third-party model is downloaded by this lab automatically.
+
+Sections 8 and 9 integrate style comparison and conversational experiments into
+the same worksheet, with shared styling and separate request controls. Every
+section includes theory and an explicit activity walkthrough. The context
+comparison includes an identical-context control. `/explore` is a compatibility
+redirect to `/#styles`; there is no separate exercise page.
+
+## What the evidence means
+
+A guided generation run makes **one paid API call**, requesting up to 40 tokens
+and logprobs for all returned output positions. The browser then reveals this
+real recorded trajectory one position at a time. It does not pretend to make a
+new API prediction on each playback click. The model's actual earlier output
+is the conditioning context for each later token in that same request.
+Playback, undo, and replay do not make further calls. A new run does.
+
+The visible prefix is a user message; generated continuation is assistant
+output. Chat boundaries, common continuation instructions, style instructions,
+and background context are all part of conditioning. This is not a raw
+base-model completion API or an attention visualization. Exact messages and
+model identity are included in the downloadable evidence.
+
+Probabilities come from `exp(logprob)` with **no renormalization**. The guided
+chart displays eight alternatives; “Other” includes the rest of the vocabulary,
+including the two additional returned alternatives that are not in that chart.
+The context comparison displays the union of both returned top-10 lists.
+Missing entries are unknown, not zero; “Other” is not token-aligned across
+conditions. Tiny nonzero probabilities appear as `<0.1%`, and values rounded
+near one appear as `>99.9%` rather than falsely implying certainty.
+
+A probability is not factual accuracy or a genre-classification score. Similar
+distributions are a valid outcome. Style prompts do not retrain a model. This
+version explains how training shapes predictions but does not compare separately
+trained models or isolate the causal effect of different training corpora.
+
+## Backend endpoints
+
+- `GET /health`: readiness and model configuration; no credentials returned.
+- `POST /tokenize`: `{ "text": "Unbelievable!" }`; returns IDs and byte boundaries.
+- `POST /lab/run`: `{ "prompt": "The night was", "context": "", "style": "neutral", "mode": "sample", "temperature": 1, "length": 40 }`; returns actual token trace and conditioning messages.
+- `POST /next-token`: original single-token API; `corpus` is novels/lyrics/news/academic.
+- `POST /chat`: original chat comparison API, with alternating user/assistant messages.
+- `GET /docs`: interactive FastAPI documentation.
+
+```sh
+curl --fail-with-body http://localhost:8000/tokenize \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"Привіт, світе!"}'
+
+curl --fail-with-body http://localhost:8000/lab/run \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"The night was","mode":"sample","length":8}'
+```
+
+Invalid input returns 422; missing credentials 503; provider connection,
+authentication, or model failures 502; quota/rate limits 429; timeouts 504.
+CORS permits local frontend ports 5500 and 8001 by default. The same-server
+frontend needs no CORS configuration. Configure exact Open edX origins using
+`CORS_ORIGINS` when integrating. This remains a local prototype: public use
+needs learner authentication and server-side usage limits. CORS is not access
+control. Open edX packaging/deployment is a later step.
+
+## Checks
 
 ```sh
 python -m pip install -r backend/requirements-dev.txt
 python -m pytest -q
+node --check frontend/assets/lab.js
+node --test frontend/tests/transformer.test.cjs
 ```
 
-Tests stub the provider to verify all four prompts, request parameters,
-probability conversion, input validation, CORS, and error handling. They do not
-establish live model availability; the curl request with your key does that.
+Provider responses are stubbed in automated tests; they incur no API charges.
+Tokenizer tests use real vocabularies and require the one-time cache warm-up
+above for a fully offline run. Coverage includes Unicode byte reconstruction,
+request validation, trace preservation, temperature selection, CORS, provider
+errors, and the original next-token/chat endpoints. The numerical transformer tests
+check causal isolation, softmax stability, vector transformation arithmetic,
+context sensitivity, and changes induced by an edited projection weight.
+Browser QA covers live
+API generation, context comparison, timeline rewind, and responsive layouts.
 
-## Official API references
+## References
 
-- [Chat Completions request and logprobs schema](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)
-- [GPT-4.1 mini](https://developers.openai.com/api/docs/models/gpt-4.1-mini)
+- [OpenAI Chat Completions and logprobs](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)
+- [OpenAI tokenizer and advanced usage](https://developers.openai.com/api/docs/guides/advanced-usage)
+- [Transformer Explainer](https://poloclub.github.io/transformer-explainer/)
 
-Open edX embedding is the next stage.
-
-## Making differences visible
-
-Each style now has original few-shot continuation examples using the same three
-prefixes across styles. This encourages suffix-only output and demonstrates
-more distinct genre patterns. These examples are part of the conditioning
-context, not new training data. The frontend also aligns exact matching tokens
-in a comparison table. Tokens omitted by the API are marked unknown, not zero.
-Try several open prefixes at temperature 1. Similar results are valid, and
-stronger prompting cannot guarantee distinct distributions for every prefix.
-
-## Chat comparison
-
-The chat panel sends identical user/assistant history to `/chat` for each style.
-Choose one reply to form the shared history for the next turn. Conversations
-stay in browser memory and reset on reload. Each turn makes four API requests.
-Replies are limited to 160 output tokens; truncation is labeled.
-
-The response includes full text plus each output position's token, bytes,
-logprob, probability, top 10 alternatives, and remaining probability mass.
-The first-token table compares identical conversation context across styles.
-Later positions condition on each reply's own preceding tokens; they are not
-controlled cross-style comparisons. These probabilities provide generation
-evidence, not proof of genre, factual correctness, or different pretraining.
+The design is original; the references inspired the learning flow.
