@@ -9,7 +9,7 @@ async function post(path,body){
  const controller=new AbortController();requestController=controller;
  let timedOut=false;
  const timeout=setTimeout(()=>{timedOut=true;controller.abort();},30000);
- const cancel=$('cancel');cancel.hidden=false;cancel.disabled=false;
+ const cancel=$('cancel');cancel.hidden=false;cancel.disabled=false;$('prediction-cancel').hidden=false;$('prediction-cancel').disabled=false;
  try{
   const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:controller.signal});
   if(!r.ok){let message;try{const e=await r.json();message=typeof e.detail==='string'?e.detail:JSON.stringify(e.detail);}catch{message=`Server error (${r.status})`;}throw Error(message);}
@@ -18,12 +18,13 @@ async function post(path,body){
   if(error.name==='AbortError')throw Error(timedOut?'No response reached this page within 30 seconds. Previous results are unchanged. Check VS Code’s forwarded port 8000, then try again.':'Request cancelled. Previous results are unchanged.');
   if(error instanceof TypeError)throw Error('Connection lost. Check VS Code’s forwarded port 8000, then try again. Previous results are unchanged.');
   throw error;
- }finally{clearTimeout(timeout);if(requestController===controller){requestController=null;cancel.hidden=true;}}
+ }finally{clearTimeout(timeout);if(requestController===controller){requestController=null;cancel.hidden=true;$('prediction-cancel').hidden=true;}}
 }
-$('cancel').onclick=()=>requestController?.abort();
+$('cancel').onclick=$('prediction-cancel').onclick=()=>requestController?.abort();
+function inspectionStatus(message,error=false){for(const id of ['status','prediction-status']){$(id).textContent=message;$(id).classList.toggle('error',error);}}
 
-function lock(value){busy=value;document.querySelectorAll('#qwen-lessons button,#qwen-lessons select,#qwen-lessons textarea,#qwen-lessons input,.inspector-extra button,.inspector-extra select,.inspector-extra textarea,.inspector-extra input').forEach(n=>n.disabled=value);if(!value){$('undo').disabled=!history.length;$('sample').disabled=$('greedy').disabled=!!data&&data.tokens.length>=96;}}
-async function inspect(ids,reset=false){if(busy)return;lock(true);$('status').className='';$('status').textContent='Waiting for Qwen… Previous results remain below until this request finishes.';try{const next=await post('/inspect',{text:$('prompt').value,token_ids:ids,layer:Number($('layer').value||0),head:activeHeads[0]??0,temperature:Number($('temperature').value),query_delta:Number($('delta').value)});if(reset)history=[];data=next;selected=Math.min(selected,data.tokens.length-1);render();$('status').textContent=`${data.model} · ${data.tokens.length} tokens · Real forward pass`;}catch(e){$('status').textContent=e.message;$('status').className='error';}finally{lock(false);}}
+function lock(value){busy=value;document.querySelectorAll('#qwen-lessons button,#qwen-lessons select,#qwen-lessons textarea,#qwen-lessons input,.inspector-extra button,.inspector-extra select,.inspector-extra textarea,.inspector-extra input').forEach(n=>n.disabled=value);if(!value){$('undo').disabled=!history.length;$('sample').disabled=$('greedy').disabled=!data||data.tokens.length>=96;$('download').disabled=!data;}}
+async function inspect(ids,reset=false){if(busy)return;lock(true);inspectionStatus('Waiting for Qwen… Previous results stay visible until this request finishes.');try{const next=await post('/inspect',{text:$('prompt').value,token_ids:ids,layer:Number($('layer').value||0),head:activeHeads[0]??0,temperature:Number($('temperature').value),query_delta:Number($('delta').value)});if(reset)history=[];data=next;selected=Math.min(selected,data.tokens.length-1);render();inspectionStatus(`${data.model} · ${data.tokens.length} tokens · Real forward pass. Ready: choose Sample and append or Append most likely.`);}catch(e){inspectionStatus(e.message,true);}finally{lock(false);}}
 function options(id,count,current){const s=$(id);s.replaceChildren();for(let i=0;i<count;i++){const o=el('option',String(i+1));o.value=i;s.append(o);}s.value=current;}
 function render(){
  $('current-text').textContent='Text so far: '+data.text;
@@ -45,11 +46,13 @@ function drawAttention(){
  const table=el('table'),header=el('tr');header.append(el('th','Query ↓ / key →'));data.tokens.forEach((t,i)=>{const th=el('th',String(i+1));th.title=t.text;header.append(th);});table.append(header);
  data.all_heads[activeHeads[0]].forEach((row,i)=>{const tr=el('tr');tr.append(el('th',`${i+1} ${data.tokens[i].text}`));row.forEach((p,j)=>{const td=el('td');td.style.background=j>i?'#eee':`rgba(84,59,150,${p*.7})`;const b=el('button',j>i?'—':(p*100).toFixed(0));b.title=`Token ${i+1} → ${j+1}: ${pct(p)}`;b.setAttribute('aria-label',b.title);b.onclick=()=>{selected=i;drawAttention();renderExtras();$('selection').textContent+=` Connection ${i+1} → ${j+1}: ${pct(p)}.`;};td.append(b);tr.append(td);});table.append(tr);});$('heatmap').replaceChildren(table);$('selection').textContent=`Query token ${selected+1}: ${JSON.stringify(data.tokens[selected].text)} · Layer ${data.layer+1}; heads ${activeHeads.map(h=>h+1).join(', ')}. Heatmap: head ${activeHeads[0]+1}.`;
 }
+$('prediction-form').onsubmit=e=>{e.preventDefault();if(busy)return;$('prompt').value=$('prediction-input').value;$('delta').value=0;$('delta-value').value='0.00';inspect(undefined,true);};
+$('prediction-input').addEventListener('input',()=>{$('prediction-status').textContent='Draft changed. Click Start this sentence to replace the current text and predictions.';});
 $('inspect-form').onsubmit=e=>{e.preventDefault();inspect(undefined,true);};
 $('example').onclick=()=>{$('prompt').value='The trophy would not fit in the suitcase because it was too big.';inspect(undefined,true);};
 for(const id of ['layer','temperature'])$(id).onchange=()=>{if(data)inspect(data.tokens.map(t=>t.id));};
-async function append(id){if(!data||busy)return;if(data.eos_ids.includes(id)){$('status').textContent='Qwen selected an end-of-sequence token. Start a new text to continue.';return;}const previous=data;await inspect([...data.tokens.map(t=>t.id),id]);if(data!==previous){history.push(previous);$('undo').disabled=false;}}
-$('sample').onclick=()=>append(data.sampled_id);$('greedy').onclick=()=>append(data.greedy_id);
+async function append(id){if(!data||busy)return;if(data.eos_ids.includes(id)){inspectionStatus('Qwen selected an end-of-sequence token. Start a new sentence to continue.');return;}const previous=data;await inspect([...data.tokens.map(t=>t.id),id]);if(data!==previous){history.push(previous);$('undo').disabled=false;}}
+$('sample').onclick=()=>{if(data)append(data.sampled_id);};$('greedy').onclick=()=>{if(data)append(data.greedy_id);};
 $('undo').onclick=()=>{if(history.length){data=history.pop();$('temperature').value=String(data.temperature);$('delta').value=data.query_delta;$('delta-value').value=data.query_delta.toFixed(2);render();lock(false);}};
 $('download').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const a=el('a');a.href=url;a.download='qwen-evidence.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 
