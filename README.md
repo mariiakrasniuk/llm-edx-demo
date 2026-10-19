@@ -3,6 +3,12 @@
 A guided Open edX activity about tokenization, next-token probability,
 context, and repeated generation. The frontend and backend run together.
 
+## Qwen with real attention
+
+For the complete ten-lesson lab powered by local Qwen3-4B, with Head View,
+transformer walkthrough, generation, context experiments, styles and chat, follow [QWEN.md](QWEN.md). Start it with `bash scripts/run-qwen.sh` after
+installing its dependencies. The instructions below describe the original worksheet.
+
 ## Run
 
 Requires Python 3.10+.
